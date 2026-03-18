@@ -27,7 +27,7 @@ const ROLLER_TYPES = [
     stickiness: 1,
     color: '#4a90d9',
     colorActive: '#6ab0ff',
-    cost: 80,
+    cost: 30,
   },
   {
     id: 'reusable',
@@ -38,7 +38,7 @@ const ROLLER_TYPES = [
     stickiness: 0.4,   // less sticky — only 40% chance to pick up each fur
     color: '#4ecca3',
     colorActive: '#6eeec3',
-    cost: 150,
+    cost: 50,
   },
 ];
 
