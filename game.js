@@ -699,6 +699,21 @@ function gameLoop() {
 
   drawRoller();
 
+  // Roller uses counter (bottom-left)
+  ctx.save();
+  ctx.font = 'bold 16px sans-serif';
+  ctx.textAlign = 'left';
+  const usesDisplay = Math.max(0, rollerUses);
+  if (rollerReloading) {
+    ctx.fillStyle = '#ffa500';
+  } else if (usesDisplay <= 20) {
+    ctx.fillStyle = '#e94560';
+  } else {
+    ctx.fillStyle = '#ccc';
+  }
+  ctx.fillText(`Rolls: ${usesDisplay}/${ROLLER_MAX_USES}`, 14, CANVAS_H - 24);
+  ctx.restore();
+
   // Progress indicator
   const alive = furParticles.filter(f => f.alive).length;
   const total = furParticles.length;
