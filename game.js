@@ -5,6 +5,8 @@ const ROLLER_RADIUS = 30;
 const FUR_SIZE = 6;
 const STARTING_TIME = 30;
 const CLEAN_BONUS_TIME = 3;
+const ROLLER_MAX_USES = 100;
+const ROLLER_RELOAD_TIME = 240;   // 4 seconds at 60fps
 
 // Clothing items: name, color, fur count
 const CLOTHING_TYPES = [
@@ -25,6 +27,9 @@ let clothingPath = null;       // Path2D for current clothing shape
 let mouseX = -100, mouseY = -100;
 let mouseDown = false;
 let gameRunning = false;
+let rollerUses = ROLLER_MAX_USES;
+let rollerReloading = false;
+let rollerReloadTimer = 0;
 
 // Cat interruption state
 let catEvents = [];            // array of active cat events
@@ -111,6 +116,9 @@ function startGame() {
   timerEl.textContent = timeLeft;
   catEvents = [];
   catCooldown = CAT_COOLDOWN_BASE;
+  rollerUses = ROLLER_MAX_USES;
+  rollerReloading = false;
+  rollerReloadTimer = 0;
   gameRunning = true;
 
   showScreen(gameScreen);
@@ -459,8 +467,12 @@ function drawRoller() {
   ctx.lineTo(mouseX, mouseY - ROLLER_RADIUS - 35);
   ctx.stroke();
 
-  // Roller body
-  ctx.fillStyle = mouseDown ? '#ff6b6b' : '#e94560';
+  // Roller body — grayed out when reloading
+  if (rollerReloading) {
+    ctx.fillStyle = '#666';
+  } else {
+    ctx.fillStyle = mouseDown ? '#ff6b6b' : '#e94560';
+  }
   ctx.beginPath();
   ctx.roundRect(mouseX - ROLLER_RADIUS, mouseY - ROLLER_RADIUS * 0.6,
                 ROLLER_RADIUS * 2, ROLLER_RADIUS * 1.2, 6);
@@ -473,6 +485,39 @@ function drawRoller() {
                 ROLLER_RADIUS * 2 - 8, ROLLER_RADIUS * 0.4, 3);
   ctx.fill();
 
+  ctx.restore();
+
+  // Roller uses indicator (below roller)
+  ctx.save();
+  if (rollerReloading) {
+    // Reload progress bar
+    const reloadPct = 1 - rollerReloadTimer / ROLLER_RELOAD_TIME;
+    const barW = ROLLER_RADIUS * 2;
+    const barX = mouseX - ROLLER_RADIUS;
+    const barY = mouseY + ROLLER_RADIUS * 0.8;
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(barX, barY, barW, 6);
+    ctx.fillStyle = '#ffa500';
+    ctx.fillRect(barX, barY, barW * reloadPct, 6);
+    // Reloading text
+    ctx.fillStyle = '#ffa500';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Reloading...', mouseX, barY + 18);
+  } else {
+    // Uses remaining bar
+    const usesPct = rollerUses / ROLLER_MAX_USES;
+    const barW = ROLLER_RADIUS * 2;
+    const barX = mouseX - ROLLER_RADIUS;
+    const barY = mouseY + ROLLER_RADIUS * 0.8;
+    ctx.fillStyle = 'rgba(0,0,0,0.4)';
+    ctx.fillRect(barX, barY, barW, 4);
+    // Color shifts from green to red as uses deplete
+    const r = Math.floor(255 * (1 - usesPct));
+    const g = Math.floor(200 * usesPct);
+    ctx.fillStyle = `rgb(${r},${g},50)`;
+    ctx.fillRect(barX, barY, barW * usesPct, 4);
+  }
   ctx.restore();
 }
 
@@ -589,8 +634,22 @@ function showBonus() {
 }
 
 // ── Game Logic ───────────────────────────────────────────────────────────────
+function updateRoller() {
+  if (rollerReloading) {
+    rollerReloadTimer--;
+    if (rollerReloadTimer <= 0) {
+      rollerReloading = false;
+      rollerUses = ROLLER_MAX_USES;
+    }
+  } else if (rollerUses <= 0) {
+    rollerReloading = true;
+    rollerReloadTimer = ROLLER_RELOAD_TIME;
+  }
+}
+
 function cleanFur() {
   if (!mouseDown) return;
+  if (rollerReloading) return;
   if (catEvents.some(c => c.type === 'sit' && c.phase === 'sitting')) return; // blocked by sitting cat
 
   for (const f of furParticles) {
@@ -599,6 +658,7 @@ function cleanFur() {
     const dy = mouseY - f.y;
     if (dx * dx + dy * dy < ROLLER_RADIUS * ROLLER_RADIUS) {
       f.alive = false;
+      rollerUses--;
     }
   }
 }
@@ -633,6 +693,7 @@ function gameLoop() {
   updateAllCatEvents();
   drawCat();
 
+  updateRoller();
   cleanFur();
   checkClean();
 
