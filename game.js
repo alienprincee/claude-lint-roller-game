@@ -10,10 +10,10 @@ const ROLLER_RELOAD_TIME = 240;   // 4 seconds at 60fps
 
 // Clothing items: name, color, fur count
 const CLOTHING_TYPES = [
-  { name: 'T-Shirt',  color: '#3a86a8', furCount: 50,  shape: 'tshirt'  },
-  { name: 'Sweater',  color: '#6a4c93', furCount: 80,  shape: 'sweater' },
-  { name: 'Pants',    color: '#4a6741', furCount: 60,  shape: 'pants'   },
-  { name: 'Socks',    color: '#b07d62', furCount: 35,  shape: 'socks'   },
+  { name: 'T-Shirt',  color: '#3a86a8', furCount: 50,  shape: 'tshirt',  timeBonus: 4 },
+  { name: 'Sweater',  color: '#6a4c93', furCount: 80,  shape: 'sweater', timeBonus: 5 },
+  { name: 'Pants',    color: '#4a6741', furCount: 60,  shape: 'pants',   timeBonus: 3 },
+  { name: 'Socks',    color: '#b07d62', furCount: 35,  shape: 'socks',   timeBonus: 2 },
 ];
 
 // ── State ────────────────────────────────────────────────────────────────────
@@ -624,9 +624,9 @@ function drawSingleCat(cat) {
   ctx.restore();
 }
 
-function showBonus() {
+function showBonus(seconds) {
   bonusPopup.classList.remove('show');
-  bonusPopup.textContent = `+${CLEAN_BONUS_TIME}s`;
+  bonusPopup.textContent = `+${seconds}s`;
   // Force reflow
   void bonusPopup.offsetWidth;
   bonusPopup.classList.add('show');
@@ -668,9 +668,10 @@ function checkClean() {
   if (alive === 0 && furParticles.length > 0) {
     score++;
     scoreEl.textContent = score;
-    timeLeft += CLEAN_BONUS_TIME;
+    const bonus = currentClothing.timeBonus;
+    timeLeft += bonus;
     timerEl.textContent = timeLeft;
-    showBonus();
+    showBonus(bonus);
     catEvents = []; // clear any active cat events on item clear
     spawnClothing();
   }
