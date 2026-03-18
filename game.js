@@ -393,9 +393,9 @@ function updateCatEvents() {
   const diff = getDifficulty();
   if (Math.random() < diff.spawnChance) {
     const roll = Math.random();
-    if (roll < 0.4) {
+    if (roll < 0.45) {
       startCatWalkAcross();
-    } else if (roll < 0.75) {
+    } else if (roll < 0.85) {
       startCatSit();
     } else {
       startCatVomit();
