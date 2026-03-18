@@ -247,6 +247,26 @@ function randomFurColor() {
   return colors[Math.floor(Math.random() * colors.length)];
 }
 
+function generateFurAt(centerX, centerY, count) {
+  const particles = [];
+  let attempts = 0;
+  while (particles.length < count && attempts < count * 20) {
+    attempts++;
+    const x = centerX + (Math.random() - 0.5) * 80;
+    const y = centerY + (Math.random() - 0.5) * 80;
+    if (ctx.isPointInPath(clothingPath, x, y)) {
+      particles.push({
+        x, y,
+        size: FUR_SIZE + Math.random() * 3,
+        angle: Math.random() * Math.PI * 2,
+        color: randomFurColor(),
+        alive: true,
+      });
+    }
+  }
+  return particles;
+}
+
 // ── Cat Events ───────────────────────────────────────────────────────────────
 function randomCatColor() {
   return CAT_COLORS[Math.floor(Math.random() * CAT_COLORS.length)];
@@ -310,13 +330,22 @@ function startCatWalkAcross() {
 function startCatSit() {
   const cx = CANVAS_W / 2;
   const cy = CANVAS_H / 2;
+  const targetX = cx + (Math.random() - 0.5) * 160;
+  const targetY = cy + (Math.random() - 0.5) * 120;
+  const fromLeft = Math.random() < 0.5;
   catEvents.push({
     type: 'sit',
-    x: cx + (Math.random() - 0.5) * 160,
-    y: cy + (Math.random() - 0.5) * 120,
+    phase: 'walking_in',       // 'walking_in' -> 'sitting'
+    x: fromLeft ? -80 : CANVAS_W + 80,
+    y: targetY,
+    targetX,
+    targetY,
+    speed: 3 + Math.random() * 1.5,
+    direction: fromLeft ? 1 : -1,
     hits: 0,
-    hitsNeeded: 8,
+    hitsNeeded: 15,
     shakeTimer: 0,
+    deposited: false,
     color: randomCatColor(),
   });
 }
@@ -342,21 +371,39 @@ function updateAllCatEvents() {
         catEvents.splice(i, 1);
       }
     } else if (cat.type === 'sit') {
-      // Check if player is rolling on the cat
-      if (mouseDown) {
-        const dx = mouseX - cat.x;
-        const dy = mouseY - cat.y;
-        if (Math.sqrt(dx * dx + dy * dy) < 50) {
-          cat.hits++;
-          cat.shakeTimer = 10;
-          if (cat.hits >= cat.hitsNeeded) {
-            catEvents.splice(i, 1);
-            continue;
+      if (cat.phase === 'walking_in') {
+        // Walk toward target position
+        cat.x += cat.speed * cat.direction;
+        const reached = cat.direction === 1
+          ? cat.x >= cat.targetX
+          : cat.x <= cat.targetX;
+        if (reached) {
+          cat.x = cat.targetX;
+          cat.phase = 'sitting';
+          // Deposit fur around where the cat sits
+          if (!cat.deposited) {
+            cat.deposited = true;
+            const sitFur = generateFurAt(cat.x, cat.y, Math.floor(currentClothing.furCount * 0.3));
+            furParticles.push(...sitFur);
           }
         }
-      }
-      if (cat.shakeTimer > 0) {
-        cat.shakeTimer--;
+      } else {
+        // Sitting phase — check if player is rolling on the cat
+        if (mouseDown) {
+          const dx = mouseX - cat.x;
+          const dy = mouseY - cat.y;
+          if (Math.sqrt(dx * dx + dy * dy) < 50) {
+            cat.hits++;
+            cat.shakeTimer = 10;
+            if (cat.hits >= cat.hitsNeeded) {
+              catEvents.splice(i, 1);
+              continue;
+            }
+          }
+        }
+        if (cat.shakeTimer > 0) {
+          cat.shakeTimer--;
+        }
       }
     }
   }
@@ -441,14 +488,20 @@ function drawSingleCat(cat) {
   const cy = cat.y;
   const bodyColor = cat.color.body;
 
-  if (cat.type === 'sit' && cat.shakeTimer > 0) {
+  if (cat.type === 'sit' && cat.phase === 'sitting' && cat.shakeTimer > 0) {
     ctx.translate((Math.random() - 0.5) * 6, (Math.random() - 0.5) * 6);
   }
 
   // Cat body
   ctx.fillStyle = bodyColor;
   ctx.beginPath();
-  if (cat.type === 'walkacross') {
+  if (cat.type === 'walkacross' || (cat.type === 'sit' && cat.phase === 'walking_in')) {
+    // Flip cat to face walking direction
+    const dir = cat.type === 'walkacross' ? 1 : cat.direction;
+    // Mirror horizontally if walking right-to-left
+    ctx.translate(cx, cy);
+    ctx.scale(dir, 1);
+    ctx.translate(-cx, -cy);
     // Walking cat (side view)
     ctx.ellipse(cx, cy, 40, 25, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -538,7 +591,7 @@ function showBonus() {
 // ── Game Logic ───────────────────────────────────────────────────────────────
 function cleanFur() {
   if (!mouseDown) return;
-  if (catEvents.some(c => c.type === 'sit')) return; // blocked by sitting cat
+  if (catEvents.some(c => c.type === 'sit' && c.phase === 'sitting')) return; // blocked by sitting cat
 
   for (const f of furParticles) {
     if (!f.alive) continue;
