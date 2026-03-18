@@ -93,6 +93,8 @@ const CAT_COLORS = [
   { body: '#d4822a', name: 'orange' },
 ];
 
+const VOMIT_CAT_COLOR = { body: '#4a7a4a', name: 'green' };
+
 // ── DOM refs ─────────────────────────────────────────────────────────────────
 const titleScreen    = document.getElementById('title-screen');
 const gameScreen     = document.getElementById('game-screen');
@@ -390,10 +392,13 @@ function updateCatEvents() {
 
   const diff = getDifficulty();
   if (Math.random() < diff.spawnChance) {
-    if (Math.random() < 0.5) {
+    const roll = Math.random();
+    if (roll < 0.4) {
       startCatWalkAcross();
-    } else {
+    } else if (roll < 0.75) {
       startCatSit();
+    } else {
+      startCatVomit();
     }
   }
 }
@@ -446,6 +451,49 @@ function startCatSit() {
     deposited: false,
     color: randomCatColor(),
   });
+}
+
+function startCatVomit() {
+  const cx = CANVAS_W / 2;
+  const cy = CANVAS_H / 2;
+  const targetX = cx + (Math.random() - 0.5) * 120;
+  const targetY = cy + (Math.random() - 0.5) * 80;
+  const fromLeft = Math.random() < 0.5;
+  catEvents.push({
+    type: 'vomit',
+    phase: 'walking_in',  // 'walking_in' -> 'vomiting' -> 'laughing' -> 'walking_out'
+    x: fromLeft ? -80 : CANVAS_W + 80,
+    y: targetY,
+    targetX,
+    targetY,
+    speed: 2.5 + Math.random() * 1.5,
+    direction: fromLeft ? 1 : -1,
+    vomitTimer: 0,
+    laughTimer: 0,
+    deposited: false,
+    color: VOMIT_CAT_COLOR,
+  });
+}
+
+function generateVomit(centerX, centerY, count) {
+  const particles = [];
+  let attempts = 0;
+  while (particles.length < count && attempts < count * 20) {
+    attempts++;
+    const x = centerX + (Math.random() - 0.5) * 60;
+    const y = centerY + (Math.random() - 0.5) * 60;
+    if (ctx.isPointInPath(clothingPath, x, y)) {
+      particles.push({
+        x, y,
+        size: FUR_SIZE + 2 + Math.random() * 4, // larger than fur
+        angle: Math.random() * Math.PI * 2,
+        color: Math.random() < 0.5 ? '#8B9B3E' : '#6B7B2E', // gross green/brown
+        alive: true,
+        isVomit: true,  // marker for harder cleanup
+      });
+    }
+  }
+  return particles;
 }
 
 function updateAllCatEvents() {
@@ -503,6 +551,41 @@ function updateAllCatEvents() {
           cat.shakeTimer--;
         }
       }
+    } else if (cat.type === 'vomit') {
+      if (cat.phase === 'walking_in') {
+        cat.x += cat.speed * cat.direction;
+        const reached = cat.direction === 1
+          ? cat.x >= cat.targetX
+          : cat.x <= cat.targetX;
+        if (reached) {
+          cat.x = cat.targetX;
+          cat.phase = 'vomiting';
+          cat.vomitTimer = 60; // 1 second of vomiting
+        }
+      } else if (cat.phase === 'vomiting') {
+        cat.vomitTimer--;
+        // Deposit vomit halfway through
+        if (!cat.deposited && cat.vomitTimer <= 30) {
+          cat.deposited = true;
+          const vomitParticles = generateVomit(cat.x, cat.y + 40, Math.floor(currentClothing.furCount * 0.5));
+          furParticles.push(...vomitParticles);
+        }
+        if (cat.vomitTimer <= 0) {
+          cat.phase = 'laughing';
+          cat.laughTimer = 90; // 1.5 seconds of laughing
+        }
+      } else if (cat.phase === 'laughing') {
+        cat.laughTimer--;
+        if (cat.laughTimer <= 0) {
+          cat.phase = 'walking_out';
+          cat.direction = 1; // walk off to the right
+        }
+      } else if (cat.phase === 'walking_out') {
+        cat.x += cat.speed * 1.5;
+        if (cat.x > CANVAS_W + 80) {
+          catEvents.splice(i, 1);
+        }
+      }
     }
   }
 
@@ -536,8 +619,13 @@ function drawFur() {
     ctx.rotate(f.angle);
     ctx.fillStyle = f.color;
     ctx.beginPath();
-    // Draw wispy fur strand
-    ctx.ellipse(0, 0, f.size * 0.3, f.size, 0, 0, Math.PI * 2);
+    if (f.isVomit) {
+      // Blobby vomit splatter
+      ctx.arc(0, 0, f.size * 0.5, 0, Math.PI * 2);
+    } else {
+      // Wispy fur strand
+      ctx.ellipse(0, 0, f.size * 0.3, f.size, 0, 0, Math.PI * 2);
+    }
     ctx.fill();
     ctx.restore();
   }
@@ -629,9 +717,12 @@ function drawSingleCat(cat) {
   // Cat body
   ctx.fillStyle = bodyColor;
   ctx.beginPath();
-  if (cat.type === 'walkacross' || (cat.type === 'sit' && (cat.phase === 'walking_in' || cat.phase === 'chasing_ball'))) {
+  const isWalking = cat.type === 'walkacross'
+    || (cat.type === 'sit' && (cat.phase === 'walking_in' || cat.phase === 'chasing_ball'))
+    || (cat.type === 'vomit' && (cat.phase === 'walking_in' || cat.phase === 'walking_out'));
+  if (isWalking) {
     // Flip cat to face walking direction
-    const dir = cat.type === 'walkacross' ? 1 : (cat.direction || 1);
+    const dir = cat.direction || 1;
     // Mirror horizontally if walking right-to-left
     ctx.translate(cx, cy);
     ctx.scale(dir, 1);
@@ -670,7 +761,7 @@ function drawSingleCat(cat) {
     ctx.arc(cx + 42, cy - 14, 3, 0, Math.PI * 2);
     ctx.fill();
   } else {
-    // Sitting cat (front view)
+    // Front-facing cat (sitting, vomiting, or laughing)
     ctx.ellipse(cx, cy, 35, 40, 0, 0, Math.PI * 2);
     ctx.fill();
     // Head
@@ -689,24 +780,84 @@ function drawSingleCat(cat) {
     ctx.lineTo(cx + 12, cy - 75);
     ctx.lineTo(cx + 18, cy - 55);
     ctx.fill();
-    // Eyes
-    ctx.fillStyle = cat.color.name === 'orange' ? '#4a4' : '#ff0';
-    ctx.beginPath();
-    ctx.arc(cx - 8, cy - 48, 4, 0, Math.PI * 2);
-    ctx.arc(cx + 8, cy - 48, 4, 0, Math.PI * 2);
-    ctx.fill();
-    // Pupils
-    ctx.fillStyle = '#000';
-    ctx.beginPath();
-    ctx.ellipse(cx - 8, cy - 48, 2, 3, 0, 0, Math.PI * 2);
-    ctx.ellipse(cx + 8, cy - 48, 2, 3, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // Hit indicator
-    if (cat.hitsNeeded > 0) {
-      ctx.fillStyle = '#e94560';
+
+    if (cat.type === 'vomit' && cat.phase === 'vomiting') {
+      // Sick eyes (X X)
+      ctx.strokeStyle = '#ff0';
+      ctx.lineWidth = 2;
+      // Left X
+      ctx.beginPath();
+      ctx.moveTo(cx - 12, cy - 52); ctx.lineTo(cx - 4, cy - 44);
+      ctx.moveTo(cx - 4, cy - 52); ctx.lineTo(cx - 12, cy - 44);
+      ctx.stroke();
+      // Right X
+      ctx.beginPath();
+      ctx.moveTo(cx + 4, cy - 52); ctx.lineTo(cx + 12, cy - 44);
+      ctx.moveTo(cx + 12, cy - 52); ctx.lineTo(cx + 4, cy - 44);
+      ctx.stroke();
+      // Open mouth with vomit stream
+      ctx.fillStyle = '#6B7B2E';
+      ctx.beginPath();
+      ctx.ellipse(cx, cy - 33, 6, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Vomit stream
+      ctx.fillStyle = '#8B9B3E';
+      ctx.globalAlpha = 0.7;
+      const streamWobble = Math.sin(performance.now() * 0.01) * 3;
+      ctx.beginPath();
+      ctx.moveTo(cx - 5, cy - 28);
+      ctx.quadraticCurveTo(cx + streamWobble, cy + 10, cx - 3 + streamWobble, cy + 40);
+      ctx.lineTo(cx + 5 + streamWobble, cy + 40);
+      ctx.quadraticCurveTo(cx - streamWobble, cy + 10, cx + 5, cy - 28);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      // Label
+      ctx.fillStyle = '#8B9B3E';
       ctx.font = 'bold 14px sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`Roll me away! (${cat.hits}/${cat.hitsNeeded})`, cx, cy + 55);
+      ctx.fillText('*BLECH*', cx, cy + 60);
+    } else if (cat.type === 'vomit' && cat.phase === 'laughing') {
+      // Laughing eyes (squinted, happy)
+      ctx.strokeStyle = '#ff0';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(cx - 8, cy - 48, 5, Math.PI * 0.1, Math.PI * 0.9);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx + 8, cy - 48, 5, Math.PI * 0.1, Math.PI * 0.9);
+      ctx.stroke();
+      // Big grin
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy - 35, 8, 0, Math.PI);
+      ctx.stroke();
+      // Laughing text (wobble)
+      const wobble = Math.sin(performance.now() * 0.015) * 3;
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('HA HA HA!', cx + wobble, cy + 55);
+    } else {
+      // Normal eyes (sitting cat)
+      ctx.fillStyle = cat.color.name === 'orange' ? '#4a4' : (cat.color.name === 'green' ? '#ff0' : '#ff0');
+      ctx.beginPath();
+      ctx.arc(cx - 8, cy - 48, 4, 0, Math.PI * 2);
+      ctx.arc(cx + 8, cy - 48, 4, 0, Math.PI * 2);
+      ctx.fill();
+      // Pupils
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.ellipse(cx - 8, cy - 48, 2, 3, 0, 0, Math.PI * 2);
+      ctx.ellipse(cx + 8, cy - 48, 2, 3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Hit indicator
+      if (cat.hitsNeeded > 0) {
+        ctx.fillStyle = '#e94560';
+        ctx.font = 'bold 14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Roll me away! (${cat.hits}/${cat.hitsNeeded})`, cx, cy + 55);
+      }
     }
   }
 
@@ -751,6 +902,8 @@ function cleanFur() {
     if (dx * dx + dy * dy < r * r) {
       // Stickiness check for reusable roller
       if (roller.stickiness < 1 && Math.random() > roller.stickiness) continue;
+      // Vomit is harder to clean — 30% chance to resist each roll
+      if (f.isVomit && Math.random() < 0.3) continue;
       f.alive = false;
       if (roller.maxUses !== Infinity) rollerUses--;
     }
