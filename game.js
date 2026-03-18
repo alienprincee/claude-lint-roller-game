@@ -11,8 +11,8 @@ const ROLLER_TYPES = [
     id: 'basic',
     name: 'Basic Roller',
     radius: 30,
-    maxUses: 100,
-    reloadTime: 240,   // 4s at 60fps
+    maxUses: 200,
+    reloadTime: 180,   // 3s at 60fps
     stickiness: 1,     // multiplier: 1 = normal
     color: '#e94560',
     colorActive: '#ff6b6b',
@@ -22,8 +22,8 @@ const ROLLER_TYPES = [
     id: 'wide',
     name: 'Wide Roller',
     radius: 50,
-    maxUses: 75,
-    reloadTime: 240,
+    maxUses: 100,
+    reloadTime: 300,   // 5s at 60fps
     stickiness: 1,
     color: '#4a90d9',
     colorActive: '#6ab0ff',
