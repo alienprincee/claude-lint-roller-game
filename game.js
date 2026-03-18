@@ -70,8 +70,12 @@ let rollerUses = 0;
 let rollerReloading = false;
 let rollerReloadTimer = 0;
 
-// Currency
+// Currency & consumables
 let lintPoints = 0;            // persistent across rounds
+let fuzzBalls = 0;             // consumable item count
+
+// Fuzz ball animation state
+let activeFuzzBall = null;     // { x, y, targetX, targetY, phase, catIndex }
 
 // Cat interruption state
 let catEvents = [];            // array of active cat events
@@ -145,7 +149,7 @@ function init() {
     mouseDown = false;
   });
 
-  // Tool switching
+  // Tool switching & fuzz ball
   document.addEventListener('keydown', e => {
     if (e.key === 'q' || e.key === 'Q') {
       if (gameRunning && equippedRollers.length > 1) {
@@ -154,6 +158,11 @@ function init() {
         rollerUses = roller.maxUses;
         rollerReloading = false;
         rollerReloadTimer = 0;
+      }
+    }
+    if (e.key === 'x' || e.key === 'X') {
+      if (gameRunning && fuzzBalls > 0 && !activeFuzzBall) {
+        throwFuzzBall();
       }
     }
   });
@@ -186,6 +195,7 @@ function startGame() {
   timerEl.textContent = timeLeft;
   catEvents = [];
   catCooldown = CAT_COOLDOWN_BASE;
+  activeFuzzBall = null;
 
   // Build equipped rollers from owned ones
   equippedRollers = [...ownedRollers];
@@ -619,9 +629,9 @@ function drawSingleCat(cat) {
   // Cat body
   ctx.fillStyle = bodyColor;
   ctx.beginPath();
-  if (cat.type === 'walkacross' || (cat.type === 'sit' && cat.phase === 'walking_in')) {
+  if (cat.type === 'walkacross' || (cat.type === 'sit' && (cat.phase === 'walking_in' || cat.phase === 'chasing_ball'))) {
     // Flip cat to face walking direction
-    const dir = cat.type === 'walkacross' ? 1 : cat.direction;
+    const dir = cat.type === 'walkacross' ? 1 : (cat.direction || 1);
     // Mirror horizontally if walking right-to-left
     ctx.translate(cx, cy);
     ctx.scale(dir, 1);
@@ -747,6 +757,108 @@ function cleanFur() {
   }
 }
 
+// ── Fuzz Ball ────────────────────────────────────────────────────────────────
+function throwFuzzBall() {
+  // Find a sitting cat to target
+  const sittingCatIndex = catEvents.findIndex(c => c.type === 'sit' && c.phase === 'sitting');
+  if (sittingCatIndex === -1) return; // no sitting cat to target
+
+  fuzzBalls--;
+  const cat = catEvents[sittingCatIndex];
+  activeFuzzBall = {
+    x: CANVAS_W / 2,
+    y: CANVAS_H - 40,
+    targetX: cat.x,
+    targetY: cat.y,
+    phase: 'flying',  // 'flying' -> 'chasing'
+    catIndex: sittingCatIndex,
+    speed: 8,
+  };
+}
+
+function updateFuzzBall() {
+  if (!activeFuzzBall) return;
+
+  if (activeFuzzBall.phase === 'flying') {
+    // Move ball toward cat
+    const dx = activeFuzzBall.targetX - activeFuzzBall.x;
+    const dy = activeFuzzBall.targetY - activeFuzzBall.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 10) {
+      // Ball reached cat — cat starts chasing it off screen
+      activeFuzzBall.phase = 'chasing';
+      activeFuzzBall.targetX = CANVAS_W + 100;
+      activeFuzzBall.targetY = activeFuzzBall.y - 50;
+      // Switch the cat to chasing phase
+      const cat = catEvents[activeFuzzBall.catIndex];
+      if (cat) {
+        cat.phase = 'chasing_ball';
+      }
+    } else {
+      activeFuzzBall.x += (dx / dist) * activeFuzzBall.speed;
+      activeFuzzBall.y += (dy / dist) * activeFuzzBall.speed;
+    }
+  } else if (activeFuzzBall.phase === 'chasing') {
+    // Ball rolls off screen, cat follows
+    activeFuzzBall.x += 6;
+    const cat = catEvents[activeFuzzBall.catIndex];
+    if (cat) {
+      // Cat chases the ball
+      const dx = activeFuzzBall.x - cat.x;
+      const dy = activeFuzzBall.y - cat.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 1) {
+        cat.x += (dx / dist) * 5;
+        cat.y += (dy / dist) * 5;
+      }
+      cat.direction = 1; // face right
+
+      // Cat off screen — remove both
+      if (cat.x > CANVAS_W + 80) {
+        catEvents.splice(activeFuzzBall.catIndex, 1);
+        activeFuzzBall = null;
+        return;
+      }
+    } else {
+      activeFuzzBall = null;
+      return;
+    }
+
+    // Ball off screen without cat catching up
+    if (activeFuzzBall && activeFuzzBall.x > CANVAS_W + 150) {
+      activeFuzzBall = null;
+    }
+  }
+}
+
+function drawFuzzBall() {
+  if (!activeFuzzBall) return;
+
+  ctx.save();
+  // Fuzzy ball
+  ctx.fillStyle = '#e6c44d';
+  ctx.beginPath();
+  ctx.arc(activeFuzzBall.x, activeFuzzBall.y, 10, 0, Math.PI * 2);
+  ctx.fill();
+  // Fuzz texture
+  ctx.strokeStyle = '#d4a017';
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 8; i++) {
+    const angle = (i / 8) * Math.PI * 2 + performance.now() * 0.003;
+    ctx.beginPath();
+    ctx.moveTo(
+      activeFuzzBall.x + Math.cos(angle) * 7,
+      activeFuzzBall.y + Math.sin(angle) * 7
+    );
+    ctx.lineTo(
+      activeFuzzBall.x + Math.cos(angle) * 13,
+      activeFuzzBall.y + Math.sin(angle) * 13
+    );
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function checkClean() {
   const alive = furParticles.filter(f => f.alive).length;
   if (alive === 0 && furParticles.length > 0) {
@@ -778,6 +890,9 @@ function gameLoop() {
   updateAllCatEvents();
   drawCat();
 
+  updateFuzzBall();
+  drawFuzzBall();
+
   updateRoller();
   cleanFur();
   checkClean();
@@ -802,6 +917,19 @@ function gameLoop() {
       ctx.fillStyle = '#ccc';
     }
     ctx.fillText(`Rolls: ${usesDisplay}/${roller.maxUses}`, 14, CANVAS_H - 24);
+  }
+  ctx.restore();
+
+  // Fuzz ball counter (bottom-right)
+  ctx.save();
+  ctx.font = 'bold 16px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = fuzzBalls > 0 ? '#e6c44d' : '#666';
+  ctx.fillText(`Fuzz Balls: ${fuzzBalls}`, CANVAS_W - 14, CANVAS_H - 24);
+  if (fuzzBalls > 0) {
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '10px sans-serif';
+    ctx.fillText('Press X to throw', CANVAS_W - 14, CANVAS_H - 10);
   }
   ctx.restore();
 
@@ -917,6 +1045,40 @@ function openShop() {
     item.appendChild(btn);
     shopItemsEl.appendChild(item);
   }
+
+  // Fuzz Ball consumable
+  const fuzzItem = document.createElement('div');
+  fuzzItem.className = 'shop-item';
+
+  const fuzzInfo = document.createElement('div');
+  fuzzInfo.className = 'shop-item-info';
+
+  const fuzzName = document.createElement('div');
+  fuzzName.className = 'shop-item-name';
+  fuzzName.style.color = '#e6c44d';
+  fuzzName.textContent = `Fuzz Ball (owned: ${fuzzBalls})`;
+
+  const fuzzDesc = document.createElement('div');
+  fuzzDesc.className = 'shop-item-desc';
+  fuzzDesc.textContent = 'Toss to lure a sitting cat off the clothes. Press X to use.';
+
+  fuzzInfo.appendChild(fuzzName);
+  fuzzInfo.appendChild(fuzzDesc);
+  fuzzItem.appendChild(fuzzInfo);
+
+  const fuzzBtn = document.createElement('button');
+  fuzzBtn.className = 'shop-item-btn buy';
+  fuzzBtn.textContent = '15 LP';
+  fuzzBtn.disabled = lintPoints < 15;
+  fuzzBtn.addEventListener('click', () => {
+    if (lintPoints >= 15) {
+      lintPoints -= 15;
+      fuzzBalls++;
+      openShop(); // refresh
+    }
+  });
+  fuzzItem.appendChild(fuzzBtn);
+  shopItemsEl.appendChild(fuzzItem);
 
   showScreen(shopScreen);
 }
