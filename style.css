@@ -123,5 +123,100 @@ h1 {
 
 #gameover-screen p {
   font-size: 1.4rem;
-  margin-bottom: 2rem;
+  margin-bottom: 1rem;
+}
+
+.lint-points-earned {
+  color: #ffd700;
+  font-weight: bold;
+}
+
+#gameover-screen .btn {
+  margin-bottom: 0.5rem;
+}
+
+.btn-secondary {
+  background: #333;
+}
+
+.btn-secondary:hover {
+  background: #444;
+}
+
+/* Shop */
+.shop-balance {
+  color: #ffd700;
+  font-size: 1.3rem;
+  font-weight: bold;
+  margin-bottom: 1.5rem;
+}
+
+#shop-items {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 440px;
+  margin-bottom: 1.5rem;
+}
+
+.shop-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #1f2a48;
+  border: 2px solid #2a3a5c;
+  border-radius: 10px;
+  padding: 14px 18px;
+}
+
+.shop-item.owned {
+  border-color: #4ecca3;
+}
+
+.shop-item-info {
+  flex: 1;
+}
+
+.shop-item-name {
+  font-size: 1.1rem;
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.shop-item-desc {
+  font-size: 0.85rem;
+  color: #999;
+}
+
+.shop-item-btn {
+  padding: 8px 18px;
+  font-size: 0.95rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  white-space: nowrap;
+  margin-left: 12px;
+}
+
+.shop-item-btn.buy {
+  background: #ffd700;
+  color: #1a1a2e;
+}
+
+.shop-item-btn.buy:hover {
+  background: #e6c200;
+}
+
+.shop-item-btn.buy:disabled {
+  background: #555;
+  color: #888;
+  cursor: not-allowed;
+}
+
+.shop-item-btn.owned-label {
+  background: #4ecca3;
+  color: #1a1a2e;
+  cursor: default;
 }

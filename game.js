@@ -1,12 +1,46 @@
 // ── Constants ────────────────────────────────────────────────────────────────
 const CANVAS_W = 560;
 const CANVAS_H = 560;
-const ROLLER_RADIUS = 30;
 const FUR_SIZE = 6;
 const STARTING_TIME = 30;
 const CLEAN_BONUS_TIME = 3;
-const ROLLER_MAX_USES = 100;
-const ROLLER_RELOAD_TIME = 240;   // 4 seconds at 60fps
+
+// Roller types
+const ROLLER_TYPES = [
+  {
+    id: 'basic',
+    name: 'Basic Roller',
+    radius: 30,
+    maxUses: 100,
+    reloadTime: 240,   // 4s at 60fps
+    stickiness: 1,     // multiplier: 1 = normal
+    color: '#e94560',
+    colorActive: '#ff6b6b',
+    cost: 0,
+  },
+  {
+    id: 'wide',
+    name: 'Wide Roller',
+    radius: 50,
+    maxUses: 75,
+    reloadTime: 240,
+    stickiness: 1,
+    color: '#4a90d9',
+    colorActive: '#6ab0ff',
+    cost: 80,
+  },
+  {
+    id: 'reusable',
+    name: 'Reusable Roller',
+    radius: 30,
+    maxUses: Infinity,
+    reloadTime: 0,
+    stickiness: 0.4,   // less sticky — only 40% chance to pick up each fur
+    color: '#4ecca3',
+    colorActive: '#6eeec3',
+    cost: 150,
+  },
+];
 
 // Clothing items: name, color, fur count
 const CLOTHING_TYPES = [
@@ -27,9 +61,17 @@ let clothingPath = null;       // Path2D for current clothing shape
 let mouseX = -100, mouseY = -100;
 let mouseDown = false;
 let gameRunning = false;
-let rollerUses = ROLLER_MAX_USES;
+
+// Roller state
+let ownedRollers = ['basic'];  // roller IDs the player owns
+let equippedRollers = ['basic']; // rollers in the player's active loadout
+let activeRollerIndex = 0;    // index into equippedRollers
+let rollerUses = 0;
 let rollerReloading = false;
 let rollerReloadTimer = 0;
+
+// Currency
+let lintPoints = 0;            // persistent across rounds
 
 // Cat interruption state
 let catEvents = [];            // array of active cat events
@@ -48,20 +90,26 @@ const CAT_COLORS = [
 ];
 
 // ── DOM refs ─────────────────────────────────────────────────────────────────
-const titleScreen   = document.getElementById('title-screen');
-const gameScreen    = document.getElementById('game-screen');
+const titleScreen    = document.getElementById('title-screen');
+const gameScreen     = document.getElementById('game-screen');
 const gameoverScreen = document.getElementById('gameover-screen');
-const scoreEl       = document.getElementById('score');
-const timerEl       = document.getElementById('timer');
-const finalScoreEl  = document.getElementById('final-score');
-const itemLabelEl   = document.getElementById('item-label');
-const bonusPopup    = document.getElementById('bonus-popup');
-const startBtn      = document.getElementById('start-btn');
-const replayBtn     = document.getElementById('replay-btn');
+const shopScreen     = document.getElementById('shop-screen');
+const scoreEl        = document.getElementById('score');
+const timerEl        = document.getElementById('timer');
+const finalScoreEl   = document.getElementById('final-score');
+const earnedPointsEl = document.getElementById('earned-points');
+const shopPointsEl   = document.getElementById('shop-points');
+const shopItemsEl    = document.getElementById('shop-items');
+const itemLabelEl    = document.getElementById('item-label');
+const bonusPopup     = document.getElementById('bonus-popup');
+const startBtn       = document.getElementById('start-btn');
+const replayBtn      = document.getElementById('replay-btn');
+const shopBtn        = document.getElementById('shop-btn');
+const shopBackBtn    = document.getElementById('shop-back-btn');
 
 // ── Screens ──────────────────────────────────────────────────────────────────
 function showScreen(screen) {
-  [titleScreen, gameScreen, gameoverScreen].forEach(s => s.classList.remove('active'));
+  [titleScreen, gameScreen, gameoverScreen, shopScreen].forEach(s => s.classList.remove('active'));
   screen.classList.add('active');
 }
 
@@ -96,8 +144,23 @@ function init() {
     mouseDown = false;
   });
 
+  // Tool switching
+  document.addEventListener('keydown', e => {
+    if (e.key === 'q' || e.key === 'Q') {
+      if (gameRunning && equippedRollers.length > 1) {
+        activeRollerIndex = (activeRollerIndex + 1) % equippedRollers.length;
+        const roller = getActiveRoller();
+        rollerUses = roller.maxUses;
+        rollerReloading = false;
+        rollerReloadTimer = 0;
+      }
+    }
+  });
+
   startBtn.addEventListener('click', startGame);
   replayBtn.addEventListener('click', startGame);
+  shopBtn.addEventListener('click', openShop);
+  shopBackBtn.addEventListener('click', () => showScreen(gameoverScreen));
 }
 
 function updateTouchPos(e) {
@@ -108,6 +171,12 @@ function updateTouchPos(e) {
   mouseY = (touch.clientY - rect.top) * (CANVAS_H / rect.height);
 }
 
+// ── Roller helpers ───────────────────────────────────────────────────────────
+function getActiveRoller() {
+  const id = equippedRollers[activeRollerIndex];
+  return ROLLER_TYPES.find(r => r.id === id);
+}
+
 // ── Game start / end ─────────────────────────────────────────────────────────
 function startGame() {
   score = 0;
@@ -116,7 +185,12 @@ function startGame() {
   timerEl.textContent = timeLeft;
   catEvents = [];
   catCooldown = CAT_COOLDOWN_BASE;
-  rollerUses = ROLLER_MAX_USES;
+
+  // Build equipped rollers from owned ones
+  equippedRollers = [...ownedRollers];
+  activeRollerIndex = 0;
+  const roller = getActiveRoller();
+  rollerUses = roller.maxUses;
   rollerReloading = false;
   rollerReloadTimer = 0;
   gameRunning = true;
@@ -140,6 +214,9 @@ function endGame() {
   gameRunning = false;
   clearInterval(timerInterval);
   finalScoreEl.textContent = score;
+  const earned = score; // 1 lint point per cleaned item
+  lintPoints += earned;
+  earnedPointsEl.textContent = earned;
   showScreen(gameoverScreen);
 }
 
@@ -454,6 +531,9 @@ function drawFur() {
 }
 
 function drawRoller() {
+  const roller = getActiveRoller();
+  const radius = roller.radius;
+
   ctx.save();
   // Shadow
   ctx.shadowColor = 'rgba(0,0,0,0.4)';
@@ -463,26 +543,26 @@ function drawRoller() {
   ctx.strokeStyle = '#888';
   ctx.lineWidth = 4;
   ctx.beginPath();
-  ctx.moveTo(mouseX, mouseY - ROLLER_RADIUS - 5);
-  ctx.lineTo(mouseX, mouseY - ROLLER_RADIUS - 35);
+  ctx.moveTo(mouseX, mouseY - radius - 5);
+  ctx.lineTo(mouseX, mouseY - radius - 35);
   ctx.stroke();
 
   // Roller body — grayed out when reloading
   if (rollerReloading) {
     ctx.fillStyle = '#666';
   } else {
-    ctx.fillStyle = mouseDown ? '#ff6b6b' : '#e94560';
+    ctx.fillStyle = mouseDown ? roller.colorActive : roller.color;
   }
   ctx.beginPath();
-  ctx.roundRect(mouseX - ROLLER_RADIUS, mouseY - ROLLER_RADIUS * 0.6,
-                ROLLER_RADIUS * 2, ROLLER_RADIUS * 1.2, 6);
+  ctx.roundRect(mouseX - radius, mouseY - radius * 0.6,
+                radius * 2, radius * 1.2, 6);
   ctx.fill();
 
   // Sticky surface highlight
   ctx.fillStyle = 'rgba(255,255,255,0.15)';
   ctx.beginPath();
-  ctx.roundRect(mouseX - ROLLER_RADIUS + 4, mouseY - ROLLER_RADIUS * 0.6 + 3,
-                ROLLER_RADIUS * 2 - 8, ROLLER_RADIUS * 0.4, 3);
+  ctx.roundRect(mouseX - radius + 4, mouseY - radius * 0.6 + 3,
+                radius * 2 - 8, radius * 0.4, 3);
   ctx.fill();
 
   ctx.restore();
@@ -490,29 +570,25 @@ function drawRoller() {
   // Roller uses indicator (below roller)
   ctx.save();
   if (rollerReloading) {
-    // Reload progress bar
-    const reloadPct = 1 - rollerReloadTimer / ROLLER_RELOAD_TIME;
-    const barW = ROLLER_RADIUS * 2;
-    const barX = mouseX - ROLLER_RADIUS;
-    const barY = mouseY + ROLLER_RADIUS * 0.8;
+    const reloadPct = 1 - rollerReloadTimer / roller.reloadTime;
+    const barW = radius * 2;
+    const barX = mouseX - radius;
+    const barY = mouseY + radius * 0.8;
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.fillRect(barX, barY, barW, 6);
     ctx.fillStyle = '#ffa500';
     ctx.fillRect(barX, barY, barW * reloadPct, 6);
-    // Reloading text
     ctx.fillStyle = '#ffa500';
     ctx.font = 'bold 12px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Reloading...', mouseX, barY + 18);
-  } else {
-    // Uses remaining bar
-    const usesPct = rollerUses / ROLLER_MAX_USES;
-    const barW = ROLLER_RADIUS * 2;
-    const barX = mouseX - ROLLER_RADIUS;
-    const barY = mouseY + ROLLER_RADIUS * 0.8;
+  } else if (roller.maxUses !== Infinity) {
+    const usesPct = rollerUses / roller.maxUses;
+    const barW = radius * 2;
+    const barX = mouseX - radius;
+    const barY = mouseY + radius * 0.8;
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     ctx.fillRect(barX, barY, barW, 4);
-    // Color shifts from green to red as uses deplete
     const r = Math.floor(255 * (1 - usesPct));
     const g = Math.floor(200 * usesPct);
     ctx.fillStyle = `rgb(${r},${g},50)`;
@@ -635,15 +711,16 @@ function showBonus(seconds) {
 
 // ── Game Logic ───────────────────────────────────────────────────────────────
 function updateRoller() {
+  const roller = getActiveRoller();
   if (rollerReloading) {
     rollerReloadTimer--;
     if (rollerReloadTimer <= 0) {
       rollerReloading = false;
-      rollerUses = ROLLER_MAX_USES;
+      rollerUses = roller.maxUses;
     }
-  } else if (rollerUses <= 0) {
+  } else if (roller.maxUses !== Infinity && rollerUses <= 0) {
     rollerReloading = true;
-    rollerReloadTimer = ROLLER_RELOAD_TIME;
+    rollerReloadTimer = roller.reloadTime;
   }
 }
 
@@ -652,13 +729,17 @@ function cleanFur() {
   if (rollerReloading) return;
   if (catEvents.some(c => c.type === 'sit' && c.phase === 'sitting')) return; // blocked by sitting cat
 
+  const roller = getActiveRoller();
+  const r = roller.radius;
   for (const f of furParticles) {
     if (!f.alive) continue;
     const dx = mouseX - f.x;
     const dy = mouseY - f.y;
-    if (dx * dx + dy * dy < ROLLER_RADIUS * ROLLER_RADIUS) {
+    if (dx * dx + dy * dy < r * r) {
+      // Stickiness check for reusable roller
+      if (roller.stickiness < 1 && Math.random() > roller.stickiness) continue;
       f.alive = false;
-      rollerUses--;
+      if (roller.maxUses !== Infinity) rollerUses--;
     }
   }
 }
@@ -701,19 +782,28 @@ function gameLoop() {
   drawRoller();
 
   // Roller uses counter (bottom-left)
+  const roller = getActiveRoller();
   ctx.save();
   ctx.font = 'bold 16px sans-serif';
   ctx.textAlign = 'left';
-  const usesDisplay = Math.max(0, rollerUses);
-  if (rollerReloading) {
-    ctx.fillStyle = '#ffa500';
-  } else if (usesDisplay <= 20) {
-    ctx.fillStyle = '#e94560';
+  if (roller.maxUses === Infinity) {
+    ctx.fillStyle = roller.color;
+    ctx.fillText('Rolls: \u221E', 14, CANVAS_H - 24);
   } else {
-    ctx.fillStyle = '#ccc';
+    const usesDisplay = Math.max(0, rollerUses);
+    if (rollerReloading) {
+      ctx.fillStyle = '#ffa500';
+    } else if (usesDisplay <= 20) {
+      ctx.fillStyle = '#e94560';
+    } else {
+      ctx.fillStyle = '#ccc';
+    }
+    ctx.fillText(`Rolls: ${usesDisplay}/${roller.maxUses}`, 14, CANVAS_H - 24);
   }
-  ctx.fillText(`Rolls: ${usesDisplay}/${ROLLER_MAX_USES}`, 14, CANVAS_H - 24);
   ctx.restore();
+
+  // Tool inventory (top-right)
+  drawToolInventory();
 
   // Progress indicator
   const alive = furParticles.filter(f => f.alive).length;
@@ -727,6 +817,105 @@ function gameLoop() {
   }
 
   requestAnimationFrame(gameLoop);
+}
+
+// ── Tool Inventory HUD ──────────────────────────────────────────────────────
+function drawToolInventory() {
+  if (equippedRollers.length <= 1) return;
+
+  ctx.save();
+  const startX = CANVAS_W - 14;
+  const y = 14;
+
+  for (let i = equippedRollers.length - 1; i >= 0; i--) {
+    const rt = ROLLER_TYPES.find(r => r.id === equippedRollers[i]);
+    const isActive = i === activeRollerIndex;
+    const boxW = 50;
+    const boxH = 28;
+    const bx = startX - (equippedRollers.length - i) * (boxW + 6);
+    const by = y;
+
+    // Background
+    ctx.fillStyle = isActive ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.3)';
+    ctx.strokeStyle = isActive ? rt.color : 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = isActive ? 2 : 1;
+    ctx.beginPath();
+    ctx.roundRect(bx, by, boxW, boxH, 4);
+    ctx.fill();
+    ctx.stroke();
+
+    // Mini roller icon
+    ctx.fillStyle = rt.color;
+    const iconW = Math.min(rt.radius * 0.6, 20);
+    ctx.beginPath();
+    ctx.roundRect(bx + (boxW - iconW) / 2, by + 8, iconW, 12, 3);
+    ctx.fill();
+  }
+
+  // Q hint
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillText('Press Q to switch', startX, y + 42);
+  ctx.restore();
+}
+
+// ── Shop ────────────────────────────────────────────────────────────────────
+function openShop() {
+  shopPointsEl.textContent = lintPoints;
+  shopItemsEl.innerHTML = '';
+
+  for (const rt of ROLLER_TYPES) {
+    if (rt.id === 'basic') continue; // always owned, don't show
+
+    const owned = ownedRollers.includes(rt.id);
+    const canAfford = lintPoints >= rt.cost;
+
+    const item = document.createElement('div');
+    item.className = 'shop-item' + (owned ? ' owned' : '');
+
+    const info = document.createElement('div');
+    info.className = 'shop-item-info';
+
+    const name = document.createElement('div');
+    name.className = 'shop-item-name';
+    name.style.color = rt.color;
+    name.textContent = rt.name;
+
+    const desc = document.createElement('div');
+    desc.className = 'shop-item-desc';
+    if (rt.id === 'wide') {
+      desc.textContent = `Wider coverage (radius ${rt.radius}), ${rt.maxUses} rolls per sheet`;
+    } else if (rt.id === 'reusable') {
+      desc.textContent = 'Unlimited rolls, but less sticky (requires more passes)';
+    }
+
+    info.appendChild(name);
+    info.appendChild(desc);
+    item.appendChild(info);
+
+    const btn = document.createElement('button');
+    btn.className = 'shop-item-btn';
+    if (owned) {
+      btn.className += ' owned-label';
+      btn.textContent = 'Owned';
+    } else {
+      btn.className += ' buy';
+      btn.textContent = `${rt.cost} LP`;
+      btn.disabled = !canAfford;
+      btn.addEventListener('click', () => {
+        if (lintPoints >= rt.cost) {
+          lintPoints -= rt.cost;
+          ownedRollers.push(rt.id);
+          openShop(); // refresh
+        }
+      });
+    }
+    item.appendChild(btn);
+    shopItemsEl.appendChild(item);
+  }
+
+  showScreen(shopScreen);
 }
 
 // ── Boot ─────────────────────────────────────────────────────────────────────
