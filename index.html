@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Lint Roller</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game-container">
+    <!-- Title Screen -->
+    <div id="title-screen" class="screen active">
+      <h1>🧹 Lint Roller</h1>
+      <p class="subtitle">Remove cat fur from your clothes before time runs out!</p>
+      <button id="start-btn" class="btn">Start Game</button>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="game-screen" class="screen">
+      <div id="hud">
+        <div id="score-display">Score: <span id="score">0</span></div>
+        <div id="timer-display">Time: <span id="timer">30</span>s</div>
+      </div>
+      <div id="item-label"></div>
+      <canvas id="game-canvas"></canvas>
+      <div id="bonus-popup" class="hidden">+3s</div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="gameover-screen" class="screen">
+      <h1>Time's Up!</h1>
+      <p>You cleaned <span id="final-score">0</span> items!</p>
+      <button id="replay-btn" class="btn">Play Again</button>
+    </div>
+  </div>
+
+  <script src="game.js"></script>
+</body>
+</html>
