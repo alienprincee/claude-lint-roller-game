@@ -78,6 +78,10 @@ h1 {
   font-weight: bold;
 }
 
+#lint-points-display {
+  color: #ffd700;
+}
+
 #timer-display {
   color: #e94560;
 }

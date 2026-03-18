@@ -106,6 +106,7 @@ const startBtn       = document.getElementById('start-btn');
 const replayBtn      = document.getElementById('replay-btn');
 const shopBtn        = document.getElementById('shop-btn');
 const shopBackBtn    = document.getElementById('shop-back-btn');
+const hudLintPointsEl = document.getElementById('hud-lint-points');
 
 // ── Screens ──────────────────────────────────────────────────────────────────
 function showScreen(screen) {
@@ -195,6 +196,7 @@ function startGame() {
   rollerReloadTimer = 0;
   gameRunning = true;
 
+  hudLintPointsEl.textContent = lintPoints;
   showScreen(gameScreen);
   spawnClothing();
   startTimer();
@@ -217,6 +219,7 @@ function endGame() {
   const earned = score; // 1 lint point per cleaned item
   lintPoints += earned;
   earnedPointsEl.textContent = earned;
+  hudLintPointsEl.textContent = lintPoints;
   showScreen(gameoverScreen);
 }
 
